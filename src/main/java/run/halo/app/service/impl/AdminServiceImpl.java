@@ -1,5 +1,6 @@
 package run.halo.app.service.impl;
 
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.io.file.FileReader;
 import cn.hutool.core.lang.Validator;
 import cn.hutool.core.util.RandomUtil;
@@ -37,8 +38,12 @@ import run.halo.app.service.*;
 import run.halo.app.utils.FileUtils;
 import run.halo.app.utils.HaloUtils;
 
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletResponse;
+import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -206,12 +211,6 @@ public class AdminServiceImpl implements AdminService {
             throw new ServiceException("已经获取过验证码，不能重复获取");
         });
 
-        Boolean emailEnabled = optionService.getByPropertyOrDefault(EmailProperties.ENABLED, Boolean.class, false);
-
-        if (!emailEnabled) {
-            throw new ServiceException("未启用 SMTP 服务");
-        }
-
         if (!userService.verifyUser(param.getUsername(), param.getEmail())) {
             throw new ServiceException("用户名或者邮箱验证错误");
         }
@@ -221,12 +220,18 @@ public class AdminServiceImpl implements AdminService {
 
         log.info("Get reset password code:{}", code);
 
+        // Cache code.
+        cacheStore.putAny("code", code, 5, TimeUnit.MINUTES);
+
+        Boolean emailEnabled = optionService.getByPropertyOrDefault(EmailProperties.ENABLED, Boolean.class, false);
+
+        if (!emailEnabled) {
+            throw new ServiceException("未启用 SMTP 服务，无法发送邮件，但是你可以通过系统日志找到验证码");
+        }
+
         // Send email to administrator.
         String content = "您正在进行密码重置操作，如不是本人操作，请尽快做好相应措施。密码重置验证码如下（五分钟有效）：\n" + code;
         mailService.sendMail(param.getEmail(), "找回密码验证码", content);
-
-        // Cache code.
-        cacheStore.putAny("code", code, 5, TimeUnit.MINUTES);
     }
 
     @Override
@@ -434,7 +439,7 @@ public class AdminServiceImpl implements AdminService {
         token.setRefreshToken(HaloUtils.randomUUIDWithoutDash());
 
         // Cache those tokens, just for clearing
-        cacheStore.putAny(SecurityUtils.buildAccessTokenKey(user), token.getAccessToken(), REFRESH_TOKEN_EXPIRED_DAYS, TimeUnit.DAYS);
+        cacheStore.putAny(SecurityUtils.buildAccessTokenKey(user), token.getAccessToken(), ACCESS_TOKEN_EXPIRED_SECONDS, TimeUnit.SECONDS);
         cacheStore.putAny(SecurityUtils.buildRefreshTokenKey(user), token.getRefreshToken(), REFRESH_TOKEN_EXPIRED_DAYS, TimeUnit.DAYS);
 
         // Cache those tokens with user id
@@ -448,7 +453,7 @@ public class AdminServiceImpl implements AdminService {
     public String getApplicationConfig() {
         File file = new File(haloProperties.getWorkDir(), APPLICATION_CONFIG_NAME);
         if (!file.exists()) {
-            return "";
+            return StringUtils.EMPTY;
         }
         FileReader reader = new FileReader(file);
         return reader.readString();
@@ -456,11 +461,92 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     public void updateApplicationConfig(String content) {
+        Assert.notNull(content, "Content must not be null");
+
         Path path = Paths.get(haloProperties.getWorkDir(), APPLICATION_CONFIG_NAME);
         try {
             Files.write(path, content.getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new ServiceException("保存配置文件失败", e);
+        }
+    }
+
+    @Override
+    public String getLogFiles(Long lines) {
+        Assert.notNull(lines, "Lines must not be null");
+
+        File file = new File(haloProperties.getWorkDir(), LOG_PATH);
+
+        StringBuilder result = new StringBuilder();
+
+        if (!file.exists()) {
+            return StringUtils.EMPTY;
+        }
+        long count = 0;
+
+        RandomAccessFile randomAccessFile = null;
+        try {
+            randomAccessFile = new RandomAccessFile(file, "r");
+            long length = randomAccessFile.length();
+            if (length == 0L) {
+                return StringUtils.EMPTY;
+            } else {
+                long pos = length - 1;
+                while (pos > 0) {
+                    pos--;
+                    randomAccessFile.seek(pos);
+                    if (randomAccessFile.readByte() == '\n') {
+                        String line = randomAccessFile.readLine();
+                        result.append(new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8));
+                        result.append(StringUtils.LF);
+                        count++;
+                        if (count == lines) {
+                            break;
+                        }
+                    }
+                }
+                if (pos == 0) {
+                    randomAccessFile.seek(0);
+                    result.append(new String(randomAccessFile.readLine().getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8));
+                    result.append(StringUtils.LF);
+                }
+            }
+        } catch (Exception e) {
+            throw new ServiceException("读取日志失败", e);
+        } finally {
+            if (randomAccessFile != null) {
+                try {
+                    randomAccessFile.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return result.toString();
+    }
+
+    @Override
+    public void downloadLogFiles(Long lines, HttpServletResponse response) {
+        Assert.notNull(lines, "Lines must not be null");
+        Assert.notNull(response, "HttpServletResponse must not be null");
+
+        String logFiles = getLogFiles(lines);
+        String fileName = "halo-log-" +
+                DateUtil.format(DateUtil.date(), "yyyy-MM-dd-HH-mm-ss") +
+                ".log";
+        response.setContentType("application/force-download");
+        response.setHeader("Content-Disposition", "attachment; filename=" + fileName);
+        ServletOutputStream outputStream;
+        BufferedOutputStream bufferedOutputStream;
+        try {
+            outputStream = response.getOutputStream();
+            bufferedOutputStream = new BufferedOutputStream(outputStream);
+            bufferedOutputStream.write(logFiles.getBytes(StandardCharsets.UTF_8));
+            bufferedOutputStream.flush();
+            bufferedOutputStream.close();
+            outputStream.close();
+        } catch (IOException e) {
+            throw new ServiceException("日志下载失败", e);
         }
     }
 }

@@ -9,7 +9,7 @@ apply plugin: 'io.spring.dependency-management'
 
 group = 'run.halo.app'
 archivesBaseName = 'halo'
-version = '1.2.0-beta.1'
+version = '1.2.0-beta.3'
 sourceCompatibility = '1.8'
 description = 'Halo, personal blog system developed in Java.'
 
@@ -25,6 +25,9 @@ configurations {
     implementation {
         exclude module: 'spring-boot-starter-tomcat'
         exclude module: 'slf4j-log4j12'
+        exclude module: 'spring-boot-starter-logging'
+        exclude module: 'logback-classic'
+        exclude module: 'logback-core'
     }
 
     developmentOnly
@@ -59,6 +62,7 @@ ext {
     image4jVersion = '0.7zensight1'
     flywayVersion = '6.1.0'
     h2Version = '1.4.196'
+    sentryVersion = '1.7.27'
 }
 
 dependencies {
@@ -68,6 +72,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-undertow'
     implementation 'org.springframework.boot:spring-boot-starter-freemarker'
+    implementation 'org.springframework.boot:spring-boot-starter-log4j2'
 
     implementation "io.github.biezhi:oh-my-email:$ohMyEmailVersion"
     implementation "cn.hutool:hutool-core:$hutoolVersion"
@@ -104,6 +109,8 @@ dependencies {
     implementation "net.coobird:thumbnailator:$thumbnailatorVersion"
     implementation "net.sf.image4j:image4j:$image4jVersion"
     implementation "org.flywaydb:flyway-core:$flywayVersion"
+
+    implementation "io.sentry:sentry-log4j2:$sentryVersion"
 
     runtimeOnly "com.h2database:h2:$h2Version"
     runtimeOnly 'mysql:mysql-connector-java'

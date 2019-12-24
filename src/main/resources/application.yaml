@@ -52,11 +52,6 @@ management:
       base-path: /api/admin/actuator
       exposure:
         include: ['httptrace', 'metrics','env','logfile','health']
-logging:
-  level:
-    run.halo.app: INFO
-  file:
-    path: ${user.home}/.halo/logs
 
 halo:
   download-timeout: 5m

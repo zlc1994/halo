@@ -7,6 +7,8 @@ import run.halo.app.model.params.LoginParam;
 import run.halo.app.model.params.ResetPasswordParam;
 import run.halo.app.security.token.AuthToken;
 
+import javax.servlet.http.HttpServletResponse;
+
 /**
  * Admin service interface.
  *
@@ -24,6 +26,8 @@ public interface AdminService {
     int REFRESH_TOKEN_EXPIRED_DAYS = 30;
 
     String APPLICATION_CONFIG_NAME = "application.yaml";
+
+    String LOG_PATH = "logs/spring.log";
 
     /**
      * Authenticates.
@@ -96,5 +100,20 @@ public interface AdminService {
      *
      * @param content new content
      */
-    void updateApplicationConfig(String content);
+    void updateApplicationConfig(@NonNull String content);
+
+    /**
+     * Get halo logs content.
+     *
+     * @param lines lines
+     * @return logs content.
+     */
+    String getLogFiles(@NonNull Long lines);
+
+    /**
+     * Download halo log file.
+     *
+     * @param lines lines.
+     */
+    void downloadLogFiles(@NonNull Long lines, @NonNull HttpServletResponse response);
 }
